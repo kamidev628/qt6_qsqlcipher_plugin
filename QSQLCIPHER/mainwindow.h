@@ -2,8 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-
-class QSqlDatabase;
+#include <QSqlDatabase>
 
 class QVBoxLayout;
 class QHBoxLayout;
@@ -14,8 +13,9 @@ class QLineEdit;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
+
 private:
-    QSqlDatabase *db = nullptr;
+    QSqlDatabase db;  // Use stack-allocated database object
     QWidget *mainWidget = nullptr;
     QVBoxLayout *mainLayout = nullptr;
     QHBoxLayout *formLayout = nullptr;
@@ -24,11 +24,16 @@ private:
     QLineEdit *input = nullptr;
     QPushButton *addBtn = nullptr;
 
+    void applyDatabaseKey();  // Helper function to set encryption key
+    void setupUI();           // Helper function for UI setup
+
 public:
-    MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
 public slots:
     void refreshTable();
+    void addUserToDatabase();
 };
+
 #endif // MAINWINDOW_H

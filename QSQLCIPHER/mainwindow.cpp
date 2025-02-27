@@ -10,19 +10,17 @@
 #include <QLineEdit>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
+    : QMainWindow(parent), db(QSqlDatabase::addDatabase("QSQLCIPHER"))
 {
-    db = new QSqlDatabase();
-    *db = QSqlDatabase::addDatabase("QSQLCIPHER");
-    db->setDatabaseName("encrypted.db");
+    db.setDatabaseName("encrypted.db");
 
-    if (db->open()) {
+    if (db.open()) {
         qDebug() << "Database opened successfully!";
         qDebug() << "Available drivers: " << QSqlDatabase::drivers();
 
-        QSqlQuery query(*db);
-        query.exec("PRAGMA key = 'your-encryption-key';");  // Apply key
+        applyDatabaseKey();
 
+        QSqlQuery query(db);
         if (!query.exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)")) {
             qDebug() << "Table creation error:" << query.lastError().text();
         }
@@ -30,86 +28,90 @@ MainWindow::MainWindow(QWidget *parent)
         if (!query.exec("INSERT INTO users (name) VALUES ('John Doe')")) {
             qDebug() << "Insert error:" << query.lastError().text();
         }
-
     } else {
-        qDebug() << "Error opening database:" << db->lastError();
+        qDebug() << "Error opening database:" << db.lastError();
     }
 
-    mainWidget = new QWidget(this);
-    setCentralWidget(mainWidget);
-
-    mainLayout = new QVBoxLayout(this->centralWidget());
-    mainTable = new QTableWidget(this->centralWidget());
-
-    mainTable->setColumnCount(2);
-    mainTable->setColumnWidth(0, 80);
-    mainTable->setColumnWidth(1, 300);
-
-    form = new QWidget(this->centralWidget());
-    formLayout = new QHBoxLayout(form);
-
-    input = new QLineEdit(form);
-    addBtn = new QPushButton("Add", form);
-
-    connect(addBtn, &QPushButton::clicked, this, [this]() {
-        if (db->open()) {
-            QSqlQuery query(*db);
-            query.exec("PRAGMA key = 'your-encryption-key';");
-            query.prepare("INSERT INTO users (name) VALUES (:name)");
-            query.bindValue(":name", input->text());
-
-            if (!query.exec()) {
-                qDebug() << "Insert error:" << query.lastError().text();
-            }
-
-            refreshTable();
-        } else {
-            qDebug() << "Error opening database:" << db->lastError();
-        }
-    });
-
-    addBtn->setFixedWidth(50);
-
-    formLayout->setContentsMargins(0, 0, 0, 0);
-    formLayout->setSpacing(9);
-    formLayout->addWidget(input);
-    formLayout->addWidget(addBtn);
-    form->setLayout(formLayout);
-
-    mainLayout->setContentsMargins(9, 9, 9, 9);
-    mainLayout->setSpacing(9);
-    mainLayout->addWidget(mainTable);
-    mainLayout->addWidget(form);
-    this->centralWidget()->setLayout(mainLayout);
-
-    resize(600, 400);
+    setupUI();
     refreshTable();
 }
 
 MainWindow::~MainWindow() {}
 
-void MainWindow::refreshTable() {
-    if (db->open()) {
-        QSqlQuery query(*db);
-        query.exec("PRAGMA key = 'your-encryption-key';");
+void MainWindow::applyDatabaseKey() {
+    QSqlQuery query(db);
+    if (!query.exec("PRAGMA key = 'your-encryption-key';")) {
+        qDebug() << "Failed to apply encryption key:" << query.lastError().text();
+    }
+}
 
-        if (!query.exec("SELECT id, name FROM users")) {
-            qDebug() << "Select query error:" << query.lastError().text();
-        }
+void MainWindow::setupUI() {
+    mainWidget = new QWidget(this);
+    setCentralWidget(mainWidget);
 
-        mainTable->clear();
-        mainTable->setRowCount(0);
-        mainTable->setHorizontalHeaderLabels(QStringList() << "ID" << "Name");
+    mainLayout = new QVBoxLayout(mainWidget);
+    mainTable = new QTableWidget(mainWidget);
+    mainTable->setColumnCount(2);
+    mainTable->setHorizontalHeaderLabels({"ID", "Name"});
+    mainTable->setColumnWidth(0, 80);
+    mainTable->setColumnWidth(1, 300);
 
-        while (query.next()) {
-            int id = query.value(0).toInt();
-            QString name = query.value(1).toString();
-            int row = mainTable->rowCount();
-            mainTable->insertRow(row);
-            mainTable->setItem(row, 0, new QTableWidgetItem(QString::number(id)));
-            mainTable->setItem(row, 1, new QTableWidgetItem(name));
+    form = new QWidget(mainWidget);
+    formLayout = new QHBoxLayout(form);
+    input = new QLineEdit(form);
+    addBtn = new QPushButton("Add", form);
+    addBtn->setFixedWidth(50);
+
+    connect(addBtn, &QPushButton::clicked, this, &MainWindow::addUserToDatabase);
+
+    formLayout->addWidget(input);
+    formLayout->addWidget(addBtn);
+    form->setLayout(formLayout);
+
+    mainLayout->addWidget(mainTable);
+    mainLayout->addWidget(form);
+    mainWidget->setLayout(mainLayout);
+
+    resize(600, 400);
+}
+
+void MainWindow::addUserToDatabase() {
+    if (db.isOpen()) {
+        applyDatabaseKey();
+        QSqlQuery query(db);
+        query.prepare("INSERT INTO users (name) VALUES (:name)");
+        query.bindValue(":name", input->text());
+
+        if (!query.exec()) {
+            qDebug() << "Insert error:" << query.lastError().text();
+        } else {
+            input->clear();
+            refreshTable();
         }
     } else {
-        qDebug() << "Error opening database:" << db->lastError();
+        qDebug() << "Database is not open!";
+    }
+}
+
+void MainWindow::refreshTable() {
+    if (!db.isOpen()) {
+        qDebug() << "Database is not open!";
+        return;
+    }
+
+    applyDatabaseKey();
+    QSqlQuery query(db);
+    if (!query.exec("SELECT id, name FROM users")) {
+        qDebug() << "Select query error:" << query.lastError().text();
+        return;
+    }
+
+    mainTable->setRowCount(0);
+    int row = 0;
+    while (query.next()) {
+        mainTable->insertRow(row);
+        mainTable->setItem(row, 0, new QTableWidgetItem(query.value(0).toString()));
+        mainTable->setItem(row, 1, new QTableWidgetItem(query.value(1).toString()));
+        row++;
     }
 }
